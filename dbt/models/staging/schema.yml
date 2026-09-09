@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: stg_world_bank
+    description: >
+      Staging model containing validated World Bank indicators
+      for Ghana, Kenya, Nigeria, and South Africa from 2015 to 2025.
+
+    columns:
+
+      - name: country_code
+        description: "ISO 3-letter country code."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - GHA
+                  - KEN
+                  - NGA
+                  - ZAF
+
+      - name: country
+        description: "Country name."
+        data_tests:
+          - not_null
+
+      - name: indicator_code
+        description: "World Bank indicator code."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - SP.POP.TOTL
+                  - NY.GDP.PCAP.CD
+                  - IT.NET.USER.ZS
+
+      - name: indicator_name
+        description: "MEPS-friendly indicator name."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - population
+                  - gdp_per_capita
+                  - internet_penetration
+
+      - name: year
+        description: "Observation year."
+        data_tests:
+          - not_null
+
+      - name: source
+        description: "Original data source."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - World Bank

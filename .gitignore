@@ -29,3 +29,9 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# dbt
+dbt/dev.duckdb
+dbt/*.duckdb
+logs/
+*.duckdb
