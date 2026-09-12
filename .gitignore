@@ -35,3 +35,5 @@ dbt/dev.duckdb
 dbt/*.duckdb
 logs/
 *.duckdb
+
+.ipynb_checkpoints/

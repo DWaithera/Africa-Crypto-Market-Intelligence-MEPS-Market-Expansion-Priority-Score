@@ -17,6 +17,7 @@ The data foundation currently consists of:
 
 1. World Bank indicators
 2. World Bank Global Findex 2025 indicators
+3. World Bank remittances indicators
 
 ---
 
@@ -37,7 +38,7 @@ The standard MEPS analytical grain is:
 
 **One country × one indicator × one year**
 
-The exact uniqueness key depends on the source:
+The exact uniqueness key depends on the source.
 
 ### World Bank
 
@@ -101,8 +102,6 @@ The current World Bank dataset covers annual observations from **2015 to 2025**.
 
 These indicators form part of the foundational dataset used by the MEPS framework.
 
----
-
 ## 3.2 Data Source
 
 **Source:** World Bank
@@ -115,8 +114,6 @@ Raw source file:
 data/raw/world_bank/world_bank_indicators.csv
 ```
 
----
-
 ## 3.3 Source Indicators
 
 | Indicator Code | MEPS Name            | Description                          | Unit            |
@@ -124,8 +121,6 @@ data/raw/world_bank/world_bank_indicators.csv
 | SP.POP.TOTL    | population           | Total population                     | Persons         |
 | NY.GDP.PCAP.CD | gdp_per_capita       | GDP per capita in current US dollars | Current US$     |
 | IT.NET.USER.ZS | internet_penetration | Individuals using the internet       | % of population |
-
----
 
 ## 3.4 Dataset Grain
 
@@ -153,8 +148,6 @@ Expected grain:
 132 records
 ```
 
----
-
 ## 3.5 Coverage
 
 | Attribute        | Value                               |
@@ -164,8 +157,6 @@ Expected grain:
 | Indicators       | 3                                   |
 | Years            | 2015–2025                           |
 | Expected records | 132                                 |
-
----
 
 ## 3.6 World Bank Validation
 
@@ -202,8 +193,6 @@ Missing values: 4
 Duplicate grain records: 0
 ```
 
----
-
 ## 3.7 World Bank DuckDB
 
 Raw DuckDB table:
@@ -217,8 +206,6 @@ The table is populated by:
 ```text
 src/ingestion/load_world_bank_duckdb.py
 ```
-
----
 
 ## 3.8 World Bank dbt
 
@@ -256,8 +243,6 @@ The 2025 edition reports country-level indicators for survey years including **2
 
 For the current MEPS core scoring dataset, the **2024 observations** are used.
 
----
-
 ## 4.2 Data Source
 
 **Source:** World Bank Global Findex 2025
@@ -282,8 +267,6 @@ Validated analytical extract:
 data/raw/global_findex/global_findex_meps.csv
 ```
 
----
-
 ## 4.3 Selected Findex Indicators
 
 | Findex Series | MEPS Name             | Description                                                                | Unit             |
@@ -293,8 +276,6 @@ data/raw/global_findex/global_findex_meps.csv
 | con9a         | smartphone_adoption   | Adults whose main mobile phone is a smartphone                             | Proportion (0–1) |
 
 The Global Findex database provides country-level indicators across financial inclusion and digital connectivity topics.
-
----
 
 ## 4.4 Indicator Selection Rationale
 
@@ -331,8 +312,6 @@ This measures whether the respondent's main mobile phone is a smartphone.
 
 Other smartphone-related variables in the workbook are not used for the core MEPS indicator.
 
----
-
 ## 4.5 Dataset Grain
 
 The analytical grain is:
@@ -359,8 +338,6 @@ For the core MEPS extract:
 12 records
 ```
 
----
-
 ## 4.6 Coverage
 
 | Attribute               | Value                               |
@@ -372,8 +349,6 @@ For the core MEPS extract:
 | Expected records        | 12                                  |
 | Missing core values     | 0                                   |
 | Duplicate grain records | 0                                   |
-
----
 
 ## 4.7 Findex Extraction Rules
 
@@ -395,8 +370,6 @@ con9a
 ```
 
 The original 466-column workbook is not modified.
-
----
 
 ## 4.8 Findex Validation
 
@@ -422,8 +395,6 @@ Missing values: 0
 Duplicate grain records: 0
 ```
 
----
-
 ## 4.9 Findex Values
 
 The validated 2024 observations are:
@@ -438,8 +409,6 @@ The validated 2024 observations are:
 Values are retained as proportions between 0 and 1.
 
 Conversion to percentages should occur only in presentation or dashboard layers.
-
----
 
 ## 4.10 Findex DuckDB
 
@@ -464,8 +433,6 @@ Indicators: 3
 Missing values: 0
 Duplicate grain records: 0
 ```
-
----
 
 ## 4.11 Findex dbt
 
@@ -499,8 +466,6 @@ The staging model casts:
 year → integer
 value → double
 ```
-
----
 
 ## 4.12 Findex dbt Tests
 
@@ -536,50 +501,289 @@ Both tests currently pass.
 
 ---
 
-# 5. Current Data Pipeline
+# 5. World Bank Remittances
+
+## 5.1 Dataset Overview
+
+The MEPS remittances dataset contains annual personal remittances received as a percentage of GDP for the four initial MEPS markets:
+
+* Ghana (GHA)
+* Kenya (KEN)
+* Nigeria (NGA)
+* South Africa (ZAF)
+
+The indicator is sourced from the World Bank World Development Indicators (WDI).
+
+## 5.2 Source Indicator
+
+| Field                     | Definition                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------- |
+| World Bank indicator code | `BX.TRF.PWKR.DT.GD.ZS`                                                                |
+| MEPS indicator name       | `remittances_pct_gdp`                                                                 |
+| Indicator                 | Personal remittances, received (% of GDP)                                             |
+| Source                    | World Bank World Development Indicators                                               |
+| Frequency                 | Annual                                                                                |
+| Unit                      | Percentage of GDP                                                                     |
+| Direction                 | Higher values indicate greater remittance inflows relative to the size of the economy |
+
+## 5.3 Coverage
+
+| Dimension             | Coverage           |
+| --------------------- | ------------------ |
+| Countries             | GHA, KEN, NGA, ZAF |
+| Years                 | 2015–2025          |
+| Expected observations | 44                 |
+| Actual observations   | 44                 |
+
+The historical series is retained because remittances may contribute to future MEPS trajectory analysis in addition to the current market-attractiveness assessment.
+
+## 5.4 Dataset Grain
+
+The dataset grain is:
+
+**One country × one indicator × one year**
+
+The uniqueness key is:
+
+```text
+country_code
+indicator_code
+year
+```
+
+Expected grain:
+
+```text
+4 countries
+×
+1 indicator
+×
+11 years
+=
+44 records
+```
+
+## 5.5 Raw Data
+
+The validated raw extract is stored at:
+
+```text
+data/raw/world_bank/world_bank_remittances.csv
+```
+
+The raw extract is produced by:
+
+```text
+src/ingestion/world_bank_remittances.py
+```
+
+The ingestion pipeline retrieves the World Bank API response, filters the approved countries and years, standardizes the indicator name, validates the data contract, and writes the validated CSV.
+
+## 5.6 Data Validation
+
+The ingestion pipeline validates:
+
+* target countries
+* indicator code
+* indicator name
+* year range
+* expected record count
+* numeric values
+* non-negative values
+* duplicate grain
+* missing values
+
+Missing source observations are preserved rather than imputed.
+
+Current missing observation:
+
+| Country | Year | Indicator             |
+| ------- | ---: | --------------------- |
+| Kenya   | 2025 | `remittances_pct_gdp` |
+
+The missing observation is retained as `NULL` in downstream analytical layers.
+
+Current validation results:
+
+```text
+Rows: 44
+Countries: 4
+Indicators: 1
+Missing values: 1
+Duplicate grain records: 0
+Negative values: 0
+```
+
+## 5.7 DuckDB Storage
+
+The validated CSV is loaded into DuckDB using:
+
+```text
+src/ingestion/load_world_bank_remittances_duckdb.py
+```
+
+Raw DuckDB table:
+
+```text
+raw.raw_world_bank_remittances
+```
+
+## 5.8 dbt Source
+
+The raw DuckDB table is registered as a dbt source:
+
+```text
+world_bank_remittances.raw_world_bank_remittances
+```
+
+Source definition:
+
+```text
+dbt/models/sources/src_world_bank_remittances.yml
+```
+
+## 5.9 dbt Staging
+
+The staging model is:
+
+```text
+dbt/models/staging/stg_world_bank_remittances.sql
+```
+
+The staging model standardizes the `year` and `value` fields while preserving the source indicator, country, and provenance fields.
+
+Resulting relation:
+
+```text
+main.stg_world_bank_remittances
+```
+
+## 5.10 dbt Tests
+
+Two singular data-quality tests are applied.
+
+### Analytical grain uniqueness
+
+```text
+dbt/tests/test_stg_world_bank_remittances.sql
+```
+
+Checks that:
+
+```text
+country_code + indicator_code + year
+```
+
+contains no duplicate records.
+
+### Value range
+
+```text
+dbt/tests/test_stg_world_bank_remittances_value_range.sql
+```
+
+Checks that non-null remittance values are not negative.
+
+Current result:
+
+```text
+PASS = 2
+WARN = 0
+ERROR = 0
+```
+
+## 5.11 MEPS Role
+
+Remittances belong to the:
+
+**Market Attractiveness** dimension.
+
+The indicator provides a measure of the relative importance of remittance inflows within each economy.
+
+It should not be interpreted independently as evidence that a country will have higher crypto adoption.
+
+Instead, it contributes one component of the broader market-attractiveness assessment.
+
+## 5.12 Methodological Considerations
+
+Remittances are measured relative to GDP, which improves comparability across economies of different sizes.
+
+However, the indicator should not be treated as a direct measure of:
+
+* crypto usage
+* crypto adoption
+* exchange demand
+* transaction volume
+* profitability
+* market-entry success
+
+It is therefore used as a **contextual market indicator**, alongside digital readiness, financial accessibility, crypto demand, and crypto activity.
+
+---
+
+# 6. Current Data Pipeline
 
 The current MEPS data foundation is:
 
 ```text
-                    DATA SOURCES
-                         │
-          ┌──────────────┴──────────────┐
-          │                             │
-     World Bank                   Global Findex
-          │                             │
-          ▼                             ▼
-   Python ingestion              Python ingestion
-          │                             │
-          ▼                             ▼
-      Raw CSV                       Raw CSV
-          │                             │
-          └──────────────┬──────────────┘
-                         ▼
-                      DuckDB
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-        raw.world_bank       raw.global_findex
-              │                     │
-              └──────────┬──────────┘
-                         ▼
-                    dbt sources
-                         │
-                         ▼
-                   dbt staging
-                         │
-                         ▼
-                Feature engineering
-                         │
-                         ▼
-                  MEPS scoring
+                           DATA SOURCES
+                                │
+              ┌─────────────────┼─────────────────┐
+              │                 │                 │
+              ▼                 ▼                 ▼
+         World Bank       Global Findex     World Bank
+         Core Data            2025          Remittances
+              │                 │                 │
+              ▼                 ▼                 ▼
+      Python ingestion   Python ingestion   Python ingestion
+              │                 │                 │
+              ▼                 ▼                 ▼
+          Raw CSV            Raw CSV            Raw CSV
+              │                 │                 │
+              └─────────────────┼─────────────────┘
+                                ▼
+                              DuckDB
+                                │
+              ┌─────────────────┼─────────────────┐
+              │                 │                 │
+              ▼                 ▼                 ▼
+         Raw World Bank    Raw Global Findex   Raw Remittances
+              │                 │                 │
+              └─────────────────┼─────────────────┘
+                                ▼
+                           dbt sources
+                                │
+                                ▼
+                           dbt staging
+                                │
+                                ▼
+                       Feature engineering
+                                │
+                                ▼
+                          MEPS scoring
+```
+
+Current raw DuckDB tables:
+
+```text
+raw.raw_world_bank_indicators
+raw.raw_global_findex
+raw.raw_world_bank_remittances
+```
+
+Current dbt staging models:
+
+```text
+stg_world_bank
+stg_global_findex
+stg_world_bank_remittances
 ```
 
 ---
 
-# 6. Reproducibility
+# 7. Reproducibility
 
-## 6.1 World Bank
+## 7.1 World Bank Core Data
 
 Python ingestion:
 
@@ -599,9 +803,7 @@ Raw data:
 data/raw/world_bank/world_bank_indicators.csv
 ```
 
----
-
-## 6.2 Global Findex
+## 7.2 Global Findex
 
 Python ingestion:
 
@@ -627,9 +829,48 @@ Validated extract:
 data/raw/global_findex/global_findex_meps.csv
 ```
 
+## 7.3 World Bank Remittances
+
+Python ingestion:
+
+```text
+src/ingestion/world_bank_remittances.py
+```
+
+DuckDB loader:
+
+```text
+src/ingestion/load_world_bank_remittances_duckdb.py
+```
+
+Raw validated extract:
+
+```text
+data/raw/world_bank/world_bank_remittances.csv
+```
+
+dbt source:
+
+```text
+dbt/models/sources/src_world_bank_remittances.yml
+```
+
+dbt staging:
+
+```text
+dbt/models/staging/stg_world_bank_remittances.sql
+```
+
+dbt tests:
+
+```text
+dbt/tests/test_stg_world_bank_remittances.sql
+dbt/tests/test_stg_world_bank_remittances_value_range.sql
+```
+
 ---
 
-# 7. Data Quality Principles
+# 8. Data Quality Principles
 
 MEPS follows these principles:
 
@@ -637,4 +878,132 @@ MEPS follows these principles:
 2. Ingestion is reproducible through code.
 3. Data contracts are validated before analytical use.
 4. Analytical grain is explicitly defined.
-5. Duplicate records are r
+5. Duplicate records are explicitly tested.
+6. Numeric ranges are validated where applicable.
+7. Missing source observations are preserved.
+8. Missing values are not silently imputed.
+9. Source definitions are documented.
+10. Indicator selection is tied to the MEPS business decision.
+11. Correlated indicators should not be blindly combined.
+12. Transformations should be reproducible.
+13. Raw data should not be overwritten by analytical transformations.
+14. MEPS scoring should occur only after the underlying data foundation has passed validation.
+
+---
+
+# 9. Current Data Foundation Status
+
+| Dataset                    | Status    |
+| -------------------------- | --------- |
+| World Bank core indicators | 🔒 Locked |
+| Global Findex 2025         | 🔒 Locked |
+| World Bank remittances     | 🔒 Locked |
+
+Current validated data foundation:
+
+```text
+World Bank
+    ├── Population
+    ├── GDP per capita
+    └── Internet penetration
+
+Global Findex 2025
+    ├── Account ownership
+    ├── Digital payment usage
+    └── Smartphone adoption
+
+World Bank Remittances
+    └── Personal remittances received (% of GDP)
+```
+
+---
+
+# 10. Limitations
+
+The current data foundation has several limitations.
+
+## 10.1 Temporal Coverage
+
+The World Bank datasets provide annual historical observations, while the Global Findex core extract currently uses 2024 observations.
+
+The different observation periods should be considered when combining indicators in the scoring layer.
+
+## 10.2 Missing Values
+
+Some source datasets contain missing observations.
+
+Known current missing values include:
+
+```text
+World Bank internet penetration:
+GHA — 2025
+KEN — 2025
+NGA — 2025
+ZAF — 2025
+
+World Bank remittances:
+KEN — 2025
+```
+
+These values remain missing until an explicit analytical treatment is defined.
+
+## 10.3 Indicator Interpretation
+
+Individual indicators do not independently predict crypto-market success.
+
+They provide evidence about specific dimensions of market conditions.
+
+MEPS therefore combines multiple dimensions rather than relying on a single indicator.
+
+## 10.4 Source Comparability
+
+Different datasets may have different survey periods, definitions, methodologies, and update frequencies.
+
+These differences must be considered during feature engineering and scoring.
+
+## 10.5 MEPS Is a Prioritization Framework
+
+MEPS is designed to prioritize markets under limited expansion resources.
+
+It is not intended to guarantee:
+
+* user growth
+* trading volume
+* revenue
+* adoption
+* regulatory approval
+* market-entry success
+
+The final score should therefore be interpreted as a **relative prioritization signal**, not a prediction of future performance.
+
+---
+
+# 11. Next Data Engineering Stage
+
+The current data foundation supports the next MEPS engineering stages:
+
+```text
+Validated raw data
+        ↓
+dbt staging
+        ↓
+Feature engineering
+        ↓
+Normalization
+        ↓
+Dimension scores
+        ↓
+MEPS weighting
+        ↓
+Country ranking
+        ↓
+Trajectory analysis
+        ↓
+Market intelligence
+        ↓
+Growth activation
+        ↓
+Dashboard
+```
+
+The next major data-engineering work will expand the remaining approved MEPS indicators, including crypto-demand and crypto-activity signals, before the feature-engineering and scoring layers are implemented.
