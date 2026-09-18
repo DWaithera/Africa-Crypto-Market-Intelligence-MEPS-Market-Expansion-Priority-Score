@@ -23,6 +23,7 @@ The current data foundation consists of:
 2. World Bank Global Findex 2025 indicators
 3. World Bank remittances
 4. Google Trends crypto demand
+5. Chainalysis crypto activity
 
 The final MEPS core dimensions are:
 
@@ -74,6 +75,14 @@ year
 ```
 
 ### Google Trends
+
+```text
+country_code
+indicator
+year
+```
+
+### Chainalysis
 
 ```text
 country_code
@@ -147,7 +156,7 @@ The current MEPS framework contains five core analytical dimensions.
 | Digital Readiness       | Internet penetration, Smartphone adoption       |
 | Financial Accessibility | Account ownership, Digital payment usage        |
 | Crypto Demand           | Crypto search interest                          |
-| Crypto Activity         | Crypto adoption index                           |
+| Crypto Activity         | Crypto adoption rank                            |
 
 ---
 
@@ -205,9 +214,13 @@ Crypto Activity is intended to capture observable cryptocurrency adoption/activi
 
 Approved indicator:
 
-* Crypto adoption index
+* Crypto adoption rank
 
-The adoption index will be incorporated after the crypto-demand pipeline is completed.
+The Chainalysis 2024 Global Crypto Adoption Index rank is used as the raw source indicator.
+
+Lower rank indicates stronger relative crypto adoption/activity.
+
+The raw rank is preserved through ingestion and staging. Direction handling and normalization occur later during feature engineering.
 
 ---
 
@@ -1168,12 +1181,219 @@ The Google Trends alpha API is not required for the current MEPS pipeline.
 
 ---
 
-# 8. Current Data Pipeline
+# 8. Chainalysis Crypto Activity
+
+## 8.1 Purpose
+
+Chainalysis provides the Crypto Activity indicator for the MEPS framework.
+
+The **2024 Global Crypto Adoption Index** is used as the current reproducible source extract for the four MEPS target markets.
+
+---
+
+## 8.2 Source
+
+* Source organization: Chainalysis
+* Dataset: 2024 Global Crypto Adoption Index
+* Reference year: 2024
+* Countries: Ghana, Kenya, Nigeria, South Africa
+
+---
+
+## 8.3 Indicator
+
+| Field         | Definition                                     |
+| ------------- | ---------------------------------------------- |
+| Indicator     | `crypto_adoption_rank`                         |
+| Unit          | Global rank                                    |
+| Direction     | Lower rank = stronger crypto adoption/activity |
+| Year          | 2024                                           |
+| Grain         | Country + indicator + year                     |
+| Expected rows | 4                                              |
+
+---
+
+## 8.4 Current Values
+
+| Country      | Code | Rank |
+| ------------ | ---- | ---: |
+| Ghana        | GHA  |   46 |
+| Kenya        | KEN  |   28 |
+| Nigeria      | NGA  |    2 |
+| South Africa | ZAF  |   30 |
+
+---
+
+## 8.5 Methodological Treatment
+
+The raw Chainalysis rank is preserved during ingestion and staging.
+
+No artificial score is created from the rank at the ingestion stage.
+
+The transformation sequence is:
+
+```text
+Raw Chainalysis rank
+→ staging
+→ feature engineering
+→ direction handling
+→ normalization
+→ Crypto Activity score
+```
+
+This prevents the raw data layer from mixing source values with analytical transformations.
+
+---
+
+## 8.6 Raw Data
+
+Validated raw extract:
+
+```text
+data/raw/chainalysis/chainalysis_crypto_adoption_2024.csv
+```
+
+Python validation/ingestion:
+
+```text
+src/ingestion/chainalysis.py
+```
+
+The ingestion process validates the existing raw source extract without overwriting it.
+
+---
+
+## 8.7 DuckDB Storage
+
+Raw DuckDB table:
+
+```text
+raw.raw_chainalysis_crypto_adoption
+```
+
+DuckDB loader:
+
+```text
+src/ingestion/load_chainalysis_duckdb.py
+```
+
+---
+
+## 8.8 dbt Source
+
+dbt source:
+
+```text
+chainalysis.raw_chainalysis_crypto_adoption
+```
+
+Source definition:
+
+```text
+dbt/models/sources/src_chainalysis.yml
+```
+
+---
+
+## 8.9 dbt Staging
+
+Staging model:
+
+```text
+dbt/models/staging/stg_chainalysis.sql
+```
+
+Resulting relation:
+
+```text
+main.stg_chainalysis
+```
+
+The staging model standardizes the year and rank fields while preserving country, indicator, source, and source-dataset provenance.
+
+The raw adoption rank remains unchanged.
+
+---
+
+## 8.10 dbt Tests
+
+Two singular data-quality tests are applied.
+
+### Analytical grain uniqueness
+
+```text
+dbt/tests/test_stg_chainalysis.sql
+```
+
+Checks that:
+
+```text
+country_code + indicator + year
+```
+
+contains no duplicate records.
+
+### Positive rank validation
+
+```text
+dbt/tests/test_stg_chainalysis_rank_positive.sql
+```
+
+Checks that:
+
+```text
+crypto_adoption_rank > 0
+```
+
+Current result:
+
+```text
+PASS = 2
+WARN = 0
+ERROR = 0
+```
+
+---
+
+## 8.11 MEPS Role
+
+Chainalysis belongs to the:
+
+**Crypto Activity** dimension.
+
+The rank provides a market-level signal of relative crypto adoption activity.
+
+The rank does not directly represent:
+
+* number of crypto users
+* transaction volume
+* exchange revenue
+* profitability
+* future growth
+* market-entry success
+
+The rank is therefore treated as an input signal rather than a prediction.
+
+---
+
+## 8.12 Methodological Limitation
+
+The current reproducible public extract uses country rank rather than a direct country-level adoption score.
+
+Therefore, the rank should not be interpreted as a cardinal measure of the difference between countries.
+
+For example, a rank of 2 should not be interpreted as indicating twice the adoption activity of a country ranked 4.
+
+Rank transformation and normalization are deliberately deferred to the feature-engineering stage.
+
+---
+
+# 9. Current Data Pipeline
 
 The current MEPS data foundation is:
 
 ```text
-                               DATA SOURCES
+                                DATA SOURCES
                                     │
        ┌────────────────────────────┼────────────────────────────┐
        │                            │                            │
@@ -1181,18 +1401,24 @@ The current MEPS data foundation is:
   World Bank                  Global Findex                Google Trends
   Core Data                       2025                    Crypto Demand
        │                            │                            │
-       │                            │                            │
-       ├── Population               ├── Account Ownership       │
-       ├── GDP per capita           ├── Digital Payments        └── Crypto Search
-       ├── Internet Penetration     └── Smartphone Adoption         Interest
+       ├── Population               ├── Account Ownership       └── Crypto Search
+       ├── GDP per capita           ├── Digital Payments             Interest
+       ├── Internet Penetration     └── Smartphone Adoption
        └── Remittances
-       │                            │                            │
-       └────────────────────────────┼────────────────────────────┘
+       │
+       └────────────────────────────┬────────────────────────────┐
+                                    │                            │
+                                    ▼                            ▼
+                              Chainalysis
+                              Crypto Activity
+                                    │
+                                    └── Adoption Rank
+
                                     ▼
                               Python ingestion
                                     │
                                     ▼
-                                Validation
+                                 Validation
                                     │
                                     ▼
                                   Raw CSV
@@ -1201,34 +1427,34 @@ The current MEPS data foundation is:
                                   DuckDB
                                     │
                                     ▼
-                              dbt sources
+                               dbt sources
                                     │
                                     ▼
-                              dbt staging
+                               dbt staging
                                     │
                                     ▼
-                           Feature engineering
+                            Feature engineering
                                     │
                                     ▼
-                              Normalization
+                               Normalization
                                     │
                                     ▼
-                             Dimension scores
+                              Dimension scores
                                     │
                                     ▼
-                              MEPS scoring
+                               MEPS scoring
                                     │
                                     ▼
-                            Country ranking
+                             Country ranking
                                     │
                                     ▼
-                           Trajectory analysis
+                            Trajectory analysis
                                     │
                                     ▼
-                           Market intelligence
+                            Market intelligence
                                     │
                                     ▼
-                            Growth activation
+                             Growth activation
                                     │
                                     ▼
                                 Dashboard
@@ -1236,29 +1462,33 @@ The current MEPS data foundation is:
 
 ---
 
-## 8.1 Current Raw DuckDB Tables
+## 9.1 Current Raw DuckDB Tables
 
 ```text
 raw.raw_world_bank_indicators
 raw.raw_global_findex
 raw.raw_world_bank_remittances
 raw.raw_google_trends
+raw.raw_chainalysis_crypto_adoption
 ```
 
 ---
 
-## 8.2 Current dbt Staging Models
+## 9.2 Current dbt Staging Models
 
 ```text
 stg_world_bank
 stg_global_findex
 stg_world_bank_remittances
 stg_google_trends
+stg_chainalysis
 ```
 
 ---
 
-## 8.3 Current Data Flow
+## 9.3 Current Data Flow
+
+### World Bank Core Data
 
 ```text
 World Bank
@@ -1272,8 +1502,12 @@ DuckDB
 dbt source
     ↓
 stg_world_bank
+```
 
-Global Findex
+### Global Findex
+
+```text
+Global Findex 2025
     ↓
 Python extraction
     ↓
@@ -1284,7 +1518,11 @@ DuckDB
 dbt source
     ↓
 stg_global_findex
+```
 
+### World Bank Remittances
+
+```text
 World Bank Remittances
     ↓
 Python ingestion
@@ -1296,7 +1534,11 @@ DuckDB
 dbt source
     ↓
 stg_world_bank_remittances
+```
 
+### Google Trends
+
+```text
 Google Trends
     ↓
 Python ingestion
@@ -1310,11 +1552,27 @@ dbt source
 stg_google_trends
 ```
 
+### Chainalysis
+
+```text
+Chainalysis
+    ↓
+Python validation
+    ↓
+Validated raw CSV
+    ↓
+DuckDB
+    ↓
+dbt source
+    ↓
+stg_chainalysis
+```
+
 ---
 
-# 9. Reproducibility
+# 10. Reproducibility
 
-## 9.1 World Bank Core Data
+## 10.1 World Bank Core Data
 
 Python ingestion:
 
@@ -1336,7 +1594,7 @@ data/raw/world_bank/world_bank_indicators.csv
 
 ---
 
-## 9.2 Global Findex
+## 10.2 Global Findex
 
 Python ingestion:
 
@@ -1364,7 +1622,7 @@ data/raw/global_findex/global_findex_meps.csv
 
 ---
 
-## 9.3 World Bank Remittances
+## 10.3 World Bank Remittances
 
 Python ingestion:
 
@@ -1405,7 +1663,7 @@ dbt/tests/test_stg_world_bank_remittances_value_range.sql
 
 ---
 
-## 9.4 Google Trends
+## 10.4 Google Trends
 
 Python ingestion:
 
@@ -1448,7 +1706,48 @@ The Google Trends pipeline uses a single worldwide request with country-level ex
 
 ---
 
-# 10. Data Quality Principles
+## 10.5 Chainalysis
+
+Python validation:
+
+```text
+src/ingestion/chainalysis.py
+```
+
+DuckDB loader:
+
+```text
+src/ingestion/load_chainalysis_duckdb.py
+```
+
+Raw validated extract:
+
+```text
+data/raw/chainalysis/chainalysis_crypto_adoption_2024.csv
+```
+
+dbt source:
+
+```text
+dbt/models/sources/src_chainalysis.yml
+```
+
+dbt staging:
+
+```text
+dbt/models/staging/stg_chainalysis.sql
+```
+
+dbt tests:
+
+```text
+dbt/tests/test_stg_chainalysis.sql
+dbt/tests/test_stg_chainalysis_rank_positive.sql
+```
+
+---
+
+# 11. Data Quality Principles
 
 MEPS follows these principles:
 
@@ -1470,22 +1769,24 @@ MEPS follows these principles:
 16. MEPS scoring should occur only after the underlying data foundation has passed validation.
 17. Every core indicator must have a defined analytical role.
 18. Indicators should not be added solely because data is available.
+19. Source rank values should not be converted into artificial scores during ingestion.
+20. Direction handling and normalization should occur in the feature-engineering layer.
 
 ---
 
-# 11. Current Data Foundation Status
+# 12. Current Data Foundation Status
 
-| Dataset                          | Status     |
-| -------------------------------- | ---------- |
-| World Bank core indicators       | 🔒 Locked  |
-| Global Findex 2025               | 🔒 Locked  |
-| World Bank remittances           | 🔒 Locked  |
-| Google Trends crypto demand      | 🔒 Locked  |
-| Crypto activity / adoption index | 🔴 Pending |
+| Dataset                     | Status    |
+| --------------------------- | --------- |
+| World Bank core indicators  | 🔒 Locked |
+| Global Findex 2025          | 🔒 Locked |
+| World Bank remittances      | 🔒 Locked |
+| Google Trends crypto demand | 🔒 Locked |
+| Chainalysis crypto activity | 🔒 Locked |
 
 ---
 
-## 11.1 Validated Data Foundation
+## 12.1 Validated Data Foundation
 
 ```text
 World Bank
@@ -1501,11 +1802,14 @@ Global Findex 2025
 
 Google Trends
     └── Crypto search interest
+
+Chainalysis
+    └── Crypto adoption rank
 ```
 
 ---
 
-## 11.2 Current Validation Status
+## 12.2 Current Validation Status
 
 ```text
 World Bank core
@@ -1541,24 +1845,39 @@ Google Trends
     ✓ dbt source
     ✓ dbt staging
     ✓ dbt tests
-    ✓ End-to-end dbt build
+
+Chainalysis
+    ✓ Source extract
+    ✓ Data contract validation
+    ✓ Independent raw CSV QA
+    ✓ DuckDB
+    ✓ dbt source
+    ✓ dbt staging
+    ✓ dbt tests
+
+End-to-end dbt
+    ✓ 5 staging models
+    ✓ 19 data tests
+    ✓ 24 total operations
+    ✓ 0 warnings
+    ✓ 0 errors
 ```
 
 ---
 
-# 12. Limitations
+# 13. Limitations
 
 The current data foundation has several limitations.
 
-## 12.1 Temporal Coverage
+## 13.1 Temporal Coverage
 
-The World Bank datasets provide annual historical observations, while the Global Findex core extract currently uses 2024 observations and Google Trends uses 2025 data.
+The World Bank datasets provide annual historical observations, while the Global Findex core extract currently uses 2024 data, Google Trends uses 2025 data, and Chainalysis uses the 2024 Global Crypto Adoption Index.
 
 The different observation periods should be considered when combining indicators in the scoring layer.
 
 ---
 
-## 12.2 Missing Values
+## 13.2 Missing Values
 
 Some source datasets contain missing observations.
 
@@ -1579,7 +1898,7 @@ These values remain missing until an explicit analytical treatment is defined.
 
 ---
 
-## 12.3 Indicator Interpretation
+## 13.3 Indicator Interpretation
 
 Individual indicators do not independently predict crypto-market success.
 
@@ -1589,7 +1908,7 @@ MEPS therefore combines multiple dimensions rather than relying on a single indi
 
 ---
 
-## 12.4 Source Comparability
+## 13.4 Source Comparability
 
 Different datasets may have different:
 
@@ -1603,7 +1922,7 @@ These differences must be considered during feature engineering and scoring.
 
 ---
 
-## 12.5 Google Trends Limitations
+## 13.5 Google Trends Limitations
 
 Google Trends is a relative search-interest dataset.
 
@@ -1620,7 +1939,24 @@ The current MEPS methodology uses one worldwide request to maintain a common nor
 
 ---
 
-## 12.6 Indicator Correlation
+## 13.6 Chainalysis Limitations
+
+The current Chainalysis extract uses **global country rank** rather than a directly observed country-level adoption score.
+
+Therefore:
+
+* rank differences are ordinal rather than cardinal
+* a rank difference does not represent a proportional difference in adoption
+* the raw rank should not be interpreted as transaction volume
+* the raw rank should not be interpreted as user count
+* the raw rank should not be interpreted as revenue
+* the raw rank should not be interpreted as future growth
+
+Rank direction and normalization are deferred to feature engineering.
+
+---
+
+## 13.7 Indicator Correlation
 
 Some indicators may measure related underlying concepts.
 
@@ -1642,7 +1978,7 @@ The scoring model should avoid allowing highly correlated indicators to unintent
 
 ---
 
-## 12.7 MEPS Is a Prioritization Framework
+## 13.8 MEPS Is a Prioritization Framework
 
 MEPS is designed to prioritize markets under limited expansion resources.
 
@@ -1659,9 +1995,9 @@ The final score should therefore be interpreted as a **relative prioritization s
 
 ---
 
-# 13. Next Data Engineering Stage
+# 14. Next Data Engineering Stage
 
-The current validated data foundation supports the next MEPS engineering stages:
+The validated data foundation supports the next MEPS engineering stages:
 
 ```text
 Validated raw data
@@ -1691,15 +2027,23 @@ Growth activation
 Dashboard
 ```
 
-The next major data-engineering task is to add the approved **Crypto Activity** signal.
+The next major stage is **Milestone 4 — Data Engineering**.
 
-After the crypto-activity pipeline passes validation, the project will move into the feature-engineering and scoring stages.
+Milestone 4 will focus on:
 
-The scoring layer will not be implemented until the underlying approved data foundation has passed the required validation checks.
+* integrating the approved staging models
+* creating reusable intermediate transformations
+* creating analytical/mart models
+* establishing production-style transformation logic
+* strengthening pipeline reproducibility
+* preparing the unified analytical dataset for feature engineering
+* documenting the transformation architecture
+
+The MEPS scoring layer will not be implemented until the integrated analytical dataset has passed the required engineering and validation checks.
 
 ---
 
-# 14. MEPS Analytical Principle
+# 15. MEPS Analytical Principle
 
 MEPS should answer a business decision, not simply produce a ranking.
 
