@@ -310,7 +310,11 @@ dbt Source Definitions
         ↓
 dbt Staging Models
         ↓
+Integrated Analytical Models
+        ↓
 Automated Data Quality Tests
+        ↓
+Analytical Market Mart
 ```
 
 Current raw DuckDB tables:
@@ -333,6 +337,91 @@ stg_google_trends
 stg_chainalysis
 ```
 
+Current dbt analytical models:
+
+```text
+int_meps_indicators
+mart_meps_market
+```
+
+---
+
+## Data Engineering Layer
+
+### Integrated Indicator Model
+
+Model:
+
+`int_meps_indicators`
+
+Purpose:
+
+Standardize the five staging datasets into a single long-form analytical indicator layer.
+
+Analytical grain:
+
+```text
+country_code + indicator + reference_year
+```
+
+Columns:
+
+| Column           | Description                      |
+| ---------------- | -------------------------------- |
+| `country_code`   | ISO3 country code                |
+| `country`        | Country name                     |
+| `indicator`      | Standardized MEPS indicator name |
+| `value`          | Source indicator value           |
+| `reference_year` | Original source reference year   |
+| `source`         | Source organization              |
+| `source_dataset` | Source dataset                   |
+
+The model preserves historical observations and does not normalize, score, or weight indicators.
+
+### Market Mart
+
+Model:
+
+`mart_meps_market`
+
+Purpose:
+
+Provide a wide, feature-ready representation of the four MEPS markets.
+
+Grain:
+
+```text
+country_code
+```
+
+The mart contains one row per MEPS market and includes the latest available valid observation for each indicator.
+
+Each indicator retains its corresponding reference year in a dedicated `*_year` field.
+
+The mart does not perform MEPS scoring or normalization.
+
+### Reference-Year Strategy
+
+MEPS uses the **latest available valid observation** for the current-state market mart.
+
+Source reference years are preserved rather than overwritten.
+
+Where the latest observation is missing, the model selects the most recent valid observation rather than silently imputing a value.
+
+Missing-value treatment for scoring is handled later during Feature Engineering.
+
+### M4 Validation
+
+The complete dbt build passes:
+
+* **7 models**
+* **23 data tests**
+* **30 total build operations**
+* **0 errors**
+* **0 warnings**
+
+The integrated indicator layer currently contains **236 observations** across the nine MEPS indicators.
+
 ---
 
 ## Data Quality
@@ -352,22 +441,22 @@ Validation currently covers:
 * Duplicate analytical grain
 * Missing observations
 * dbt staging model integrity
+* Integrated indicator uniqueness
+* Integrated country coverage
+* Market mart uniqueness
+* Market mart country coverage
 
-The current analytical grain is generally:
+The integrated analytical grain is:
 
 ```text
-country_code + indicator + year
+country_code + indicator + reference_year
 ```
 
-where applicable.
+The market mart grain is:
 
-The complete Milestone 3 dbt build currently passes:
-
-* **5 staging models**
-* **19 data tests**
-* **24 total build operations**
-* **0 errors**
-* **0 warnings**
+```text
+country_code
+```
 
 ---
 
@@ -507,21 +596,60 @@ Chainalysis
 
 ---
 
-### Next Milestone — Data Engineering
+### Milestone 4 — Data Engineering 🔒 LOCKED
 
-**Milestone 4 — Data Engineering**
+The validated staging layer has been transformed into a reusable analytical data model.
 
-The next stage will transform the validated staging layer into reusable intermediate and analytical models.
+Completed:
 
-Planned work includes:
+* [x] Define analytical data grain
+* [x] Preserve source reference years
+* [x] Build integrated long-form indicator model
+* [x] Build current-state market mart
+* [x] Add intermediate-model data-quality tests
+* [x] Add mart data-quality tests
+* [x] Validate four-market coverage
+* [x] Run full dbt build
+* [x] Document the analytical data model
+* [x] GitHub checkpoint
 
-* [ ] Build integrated analytical dataset
-* [ ] Align indicators across sources
-* [ ] Establish intermediate dbt models
-* [ ] Establish analytical marts
-* [ ] Add integrated-model data-quality tests
-* [ ] Prepare reproducible transformation workflow
-* [ ] Document the analytical data model
+Current transformation layer:
+
+```text
+5 staging models
+      ↓
+int_meps_indicators
+      ↓
+mart_meps_market
+```
+
+The integrated indicator layer preserves historical observations and original reference years.
+
+The market mart selects the latest available valid observation for each indicator while retaining the corresponding reference year.
+
+Full dbt build result:
+
+* **7 models**
+* **23 data tests**
+* **30 total operations**
+* **0 errors**
+* **0 warnings**
+
+---
+
+### Next Milestone
+
+**Milestone 5 — Feature Engineering**
+
+The next stage will prepare the analytical indicators for scoring by defining:
+
+* [ ] Indicator direction
+* [ ] Normalization methodology
+* [ ] Missing-value treatment
+* [ ] Derived analytical features
+* [ ] Feature-level validation
+
+Feature Engineering will prepare the data for the MEPS scoring engine while keeping scoring itself separate for Milestone 6.
 
 ---
 
@@ -545,15 +673,19 @@ Highly correlated indicators will be reviewed to avoid giving the same underlyin
 
 Raw source values are retained without analytical transformations. Transformations such as normalization, direction handling, and scoring occur in downstream layers.
 
-### 5. Normalize before aggregation
+### 5. Preserve reference periods
+
+Source reference years are retained throughout the analytical pipeline rather than being overwritten to create artificial temporal consistency.
+
+### 6. Normalize before aggregation
 
 Indicators measured on different scales will be transformed before they are combined.
 
-### 6. Test the model
+### 7. Test the model
 
 Weights, assumptions, and model outputs will be challenged through sensitivity analysis.
 
-### 7. Separate exploration from production
+### 8. Separate exploration from production
 
 Notebooks are used for exploration and analysis, while the reproducible pipeline is maintained through Python, SQL, DuckDB, and dbt.
 
@@ -585,9 +717,13 @@ The current MEPS implementation uses the **2024 Global Crypto Adoption Index ran
 
 The rank is therefore preserved as the raw activity measure and will be transformed only during feature engineering.
 
-**Public data coverage**
+**Reference periods**
 
-Different datasets use different reference periods, methodologies, and collection frequencies. These differences will be documented and considered when integrating the indicators.
+Different datasets use different reference periods, methodologies, and collection frequencies. MEPS preserves these source reference periods rather than treating observations from different years as if they were collected simultaneously.
+
+**Missing observations**
+
+Missing observations are preserved through the raw and integrated layers. The current-state mart selects the latest valid observation where a newer observation is missing. Any further missing-value treatment required for scoring will be explicitly defined during Feature Engineering.
 
 Where direct measures are unavailable, proxies will be explicitly identified and their limitations documented.
 
