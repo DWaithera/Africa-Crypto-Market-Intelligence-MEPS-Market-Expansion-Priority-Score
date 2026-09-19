@@ -2445,3 +2445,384 @@ What should the company actually do?
 ```
 
 The purpose of MEPS is therefore to connect **data engineering → analytical modeling → market intelligence → growth execution** in one reproducible framework.
+
+
+---
+Perfect. Now we need to add the **M6 section** to the Data Dictionary.
+
+Since you already have the document open, go to the **very end** of the file and paste this:
+
+````markdown
+---
+
+## 17. MEPS Scoring Engine — Milestone 6
+
+### 17.1 Purpose
+
+Milestone 6 transforms the normalized features produced in Milestone 5 into:
+
+- MEPS dimension scores
+- Baseline MEPS score
+- Market ranking
+- Sensitivity analysis
+
+The scoring layer is separated from feature engineering so that transformations, scoring assumptions, and ranking logic remain independently auditable.
+
+### 17.2 MEPS Dimensions
+
+The final MEPS model contains five dimensions:
+
+| Dimension | Features |
+|---|---|
+| Market Attractiveness | Population, GDP per capita, Remittances (% GDP) |
+| Digital Readiness | Internet penetration, Smartphone adoption |
+| Financial Accessibility | Account ownership, Digital payment usage |
+| Crypto Demand | Crypto search interest |
+| Crypto Activity | Crypto adoption rank feature |
+
+### 17.3 Dimension Scoring
+
+Features within multi-feature dimensions are combined using an equal-weight arithmetic mean.
+
+#### Market Attractiveness
+
+```text
+(Population Feature
+ + GDP per Capita Feature
+ + Remittances Feature) / 3
+````
+
+#### Digital Readiness
+
+```text
+(Internet Penetration Feature
+ + Smartphone Adoption Feature) / 2
+```
+
+#### Financial Accessibility
+
+```text
+(Account Ownership Feature
+ + Digital Payment Usage Feature) / 2
+```
+
+Crypto Demand and Crypto Activity each contain one feature and therefore use the normalized feature directly.
+
+### 17.4 Baseline Dimension Weights
+
+The baseline MEPS model assigns equal weight to each dimension:
+
+| Dimension               |   Weight |
+| ----------------------- | -------: |
+| Market Attractiveness   |      20% |
+| Digital Readiness       |      20% |
+| Financial Accessibility |      20% |
+| Crypto Demand           |      20% |
+| Crypto Activity         |      20% |
+| **Total**               | **100%** |
+
+Equal weighting is used as a transparent baseline because there is not yet sufficient empirical evidence to justify unequal dimension weights.
+
+### 17.5 MEPS Formula
+
+The baseline Market Expansion Priority Score is:
+
+```text
+MEPS =
+    0.20 × Market Attractiveness
+    + 0.20 × Digital Readiness
+    + 0.20 × Financial Accessibility
+    + 0.20 × Crypto Demand
+    + 0.20 × Crypto Activity
+```
+
+The resulting MEPS score remains between 0 and 1.
+
+The score represents **relative expansion priority within the current comparison universe**.
+
+### 17.6 Baseline Results
+
+| Rank | Market       | MEPS Score |
+| ---: | ------------ | ---------: |
+|    1 | Nigeria      |     0.5477 |
+|    2 | South Africa |     0.4638 |
+|    3 | Kenya        |     0.4367 |
+|    4 | Ghana        |     0.3539 |
+
+These results are relative to the four markets currently included in MEPS.
+
+### 17.7 Dimension Profiles
+
+| Market       | Market Attractiveness | Digital Readiness | Financial Accessibility | Crypto Demand | Crypto Activity |
+| ------------ | --------------------: | ----------------: | ----------------------: | ------------: | --------------: |
+| Nigeria      |                0.6667 |            0.0719 |                  0.0000 |        1.0000 |          1.0000 |
+| Ghana        |                0.2088 |            0.7221 |                  0.7066 |        0.1321 |          0.0000 |
+| South Africa |                0.4402 |            1.0000 |                  0.5149 |        0.0000 |          0.3636 |
+| Kenya        |                0.3287 |            0.3138 |                  1.0000 |        0.1321 |          0.4091 |
+
+### 17.8 Sensitivity Analysis
+
+The scoring engine tests alternative dimension-weight scenarios.
+
+| Scenario      | Market | Digital | Financial | Demand | Activity |
+| ------------- | -----: | ------: | --------: | -----: | -------: |
+| Baseline      |    20% |     20% |       20% |    20% |      20% |
+| Market-led    |    30% |     20% |       20% |    15% |      15% |
+| Crypto-led    |    15% |     15% |       15% |    25% |      30% |
+| Readiness-led |    15% |     30% |       25% |    15% |      15% |
+
+All scenarios total 100%.
+
+Sensitivity results:
+
+| Scenario      | 1st          | 2nd          | 3rd   | 4th     |
+| ------------- | ------------ | ------------ | ----- | ------- |
+| Baseline      | Nigeria      | South Africa | Kenya | Ghana   |
+| Market-led    | Nigeria      | South Africa | Kenya | Ghana   |
+| Crypto-led    | Nigeria      | South Africa | Kenya | Ghana   |
+| Readiness-led | South Africa | Kenya        | Ghana | Nigeria |
+
+The readiness-led scenario changes the market ordering, demonstrating that MEPS results depend partly on the strategic priorities represented by the dimension weights.
+
+Under the crypto-led scenario, South Africa and Kenya are very close:
+
+```text
+South Africa = 0.402360
+Kenya        = 0.402127
+Difference   ≈ 0.000234
+```
+
+### 17.9 M6 Data Models
+
+| Model                       | Purpose                                                  |
+| --------------------------- | -------------------------------------------------------- |
+| `int_meps_dimension_scores` | Aggregates normalized features into five MEPS dimensions |
+| `mart_meps_score`           | Calculates the baseline composite MEPS score             |
+| `int_meps_sensitivity`      | Tests alternative dimension-weight scenarios             |
+| `mart_meps_market_ranking`  | Produces the baseline production market ranking          |
+
+Model flow:
+
+```text
+int_meps_features
+        ↓
+int_meps_dimension_scores
+        ↓
+mart_meps_score
+        ↓
+mart_meps_market_ranking
+
+int_meps_dimension_scores
+        ↓
+int_meps_sensitivity
+```
+
+### 17.10 M6 Validation
+
+Milestone 6 validates:
+
+* Dimension scores remain within 0–1
+* One dimension-score record per country
+* No missing dimension scores
+* MEPS scores remain within 0–1
+* One baseline MEPS record per country
+* No missing MEPS scores
+* Sensitivity scores remain within 0–1
+* Sensitivity ranks are valid
+* Four markets are present in every sensitivity scenario
+* No missing sensitivity scores or ranks
+* One production ranking record per country
+* Production ranking fields are populated
+* Production ranks remain within 1–4
+
+Full dbt pipeline validation:
+
+```text
+PASS=65
+WARN=0
+ERROR=0
+SKIP=0
+NO-OP=0
+REUSED=0
+```
+
+### 17.11 Interpretation Boundary
+
+MEPS is a **market-prioritization and decision-support framework**.
+
+It is not:
+
+* A prediction of future revenue
+* A probability of expansion success
+* An estimate of market share
+* An investment recommendation
+* An absolute measure of crypto adoption
+
+MEPS results depend on:
+
+* Markets included
+* Indicator selection
+* Source-data quality
+* Reference periods
+* Feature transformations
+* Normalization methodology
+* Dimension definitions
+* Weighting assumptions
+
+Because Min-Max normalization is relative to the current comparison universe, adding or removing markets can change feature values and therefore MEPS scores.
+
+MEPS should therefore be used alongside commercial, regulatory, operational, and qualitative market intelligence.
+
+### 17.12 M6 Status
+
+**Milestone 6 — MEPS Scoring Engine: TECHNICAL BUILD COMPLETE**
+
+Completed:
+
+* [x] Five dimension scoring
+* [x] Baseline MEPS calculation
+* [x] Sensitivity analysis
+* [x] Production market ranking
+* [x] M6 test suite
+* [x] Full dbt pipeline validation
+
+--
+
+Absolutely. Paste this **at the very end of the actual `docs/data_dictionary.md`** file. It is the clean M6 section without the accidental conversational text that appeared in the pasted copy.
+
+````markdown
+---
+
+Yes — it is longer than necessary for the Data Dictionary. We can make M6 **much tighter** while still documenting the methodology, results, models, sensitivity analysis, and validation.
+
+Use this shorter section instead. **Replace the M6 section with this:**
+
+````markdown
+---
+
+# 17. MEPS Scoring Engine — Milestone 6
+
+## 17.1 Purpose
+
+Milestone 6 converts the normalized M5 features into the five MEPS dimension scores, the baseline MEPS score, sensitivity scenarios, and the production market ranking.
+
+## 17.2 Dimension Structure
+
+| Dimension | Features | Aggregation |
+|---|---|---|
+| Market Attractiveness | Population, GDP per capita, Remittances | Mean |
+| Digital Readiness | Internet penetration, Smartphone adoption | Mean |
+| Financial Accessibility | Account ownership, Digital payments | Mean |
+| Crypto Demand | Crypto search interest | Direct |
+| Crypto Activity | Crypto adoption rank feature | Direct |
+
+All multi-feature dimensions use equal-weight arithmetic means.
+
+## 17.3 Baseline MEPS
+
+All five dimensions receive equal 20% weights:
+
+```text
+MEPS =
+0.20 × Market Attractiveness
++ 0.20 × Digital Readiness
++ 0.20 × Financial Accessibility
++ 0.20 × Crypto Demand
++ 0.20 × Crypto Activity
+````
+
+The resulting score ranges from 0–1 and represents relative market priority within the four-market comparison set.
+
+## 17.4 Baseline Results
+
+| Rank | Market       |   MEPS |
+| ---: | ------------ | -----: |
+|    1 | Nigeria      | 0.5477 |
+|    2 | South Africa | 0.4638 |
+|    3 | Kenya        | 0.4367 |
+|    4 | Ghana        | 0.3539 |
+
+### Dimension Scores
+
+| Market       | Attractiveness | Digital | Financial | Demand | Activity |
+| ------------ | -------------: | ------: | --------: | -----: | -------: |
+| Nigeria      |         0.6667 |  0.0719 |    0.0000 | 1.0000 |   1.0000 |
+| South Africa |         0.4402 |  1.0000 |    0.5149 | 0.0000 |   0.3636 |
+| Kenya        |         0.3287 |  0.3138 |    1.0000 | 0.1321 |   0.4091 |
+| Ghana        |         0.2088 |  0.7221 |    0.7066 | 0.1321 |   0.0000 |
+
+## 17.5 Sensitivity Analysis
+
+Four weighting scenarios were tested:
+
+| Scenario      | Market | Digital | Financial | Demand | Activity |
+| ------------- | -----: | ------: | --------: | -----: | -------: |
+| Baseline      |    20% |     20% |       20% |    20% |      20% |
+| Market-led    |    30% |     20% |       20% |    15% |      15% |
+| Crypto-led    |    15% |     15% |       15% |    25% |      30% |
+| Readiness-led |    15% |     30% |       25% |    15% |      15% |
+
+Results:
+
+| Scenario      | Market Ordering                        |
+| ------------- | -------------------------------------- |
+| Baseline      | Nigeria → South Africa → Kenya → Ghana |
+| Market-led    | Nigeria → South Africa → Kenya → Ghana |
+| Crypto-led    | Nigeria → South Africa → Kenya → Ghana |
+| Readiness-led | South Africa → Kenya → Ghana → Nigeria |
+
+The readiness-led scenario changes the ordering, demonstrating that MEPS results are sensitive to strategic weighting assumptions.
+
+## 17.6 M6 Models
+
+```text
+int_meps_features
+        ↓
+int_meps_dimension_scores
+        ↓
+mart_meps_score
+        ↓
+mart_meps_market_ranking
+
+int_meps_dimension_scores
+        ↓
+int_meps_sensitivity
+```
+
+| Model                       | Purpose                               |
+| --------------------------- | ------------------------------------- |
+| `int_meps_dimension_scores` | Calculates five dimension scores      |
+| `mart_meps_score`           | Calculates baseline MEPS              |
+| `int_meps_sensitivity`      | Tests alternative weighting scenarios |
+| `mart_meps_market_ranking`  | Produces production ranking           |
+
+## 17.7 Validation
+
+Full M6 dbt build:
+
+```text
+PASS=65
+WARN=0
+ERROR=0
+SKIP=0
+NO-OP=0
+REUSED=0
+```
+
+Validation covers dimension-score ranges, country grain, null checks, MEPS score ranges, sensitivity scenarios, and production ranking integrity.
+
+## 17.8 Interpretation Boundary
+
+MEPS is a **relative market-prioritization framework**, not a prediction of revenue, adoption, market share, or expansion success.
+
+Results depend on the selected markets, indicators, reference periods, transformations, normalization method, dimension definitions, and weights.
+
+Because Min-Max normalization is relative to the comparison universe, adding or removing markets can change the resulting scores.
+
+## 17.9 M6 Status
+
+**Technical build complete.**
+
+The scoring engine, sensitivity analysis, ranking, tests, and documentation are complete. GitHub lock remains pending final repository verification.
+
+```
