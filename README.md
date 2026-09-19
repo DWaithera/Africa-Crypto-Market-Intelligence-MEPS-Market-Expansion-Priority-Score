@@ -649,6 +649,153 @@ The next stage will prepare the analytical indicators for scoring by defining:
 * [ ] Derived analytical features
 * [ ] Feature-level validation
 
+
+## Feature Engineering Layer
+
+### Feature Model
+
+Model:
+
+`int_meps_features`
+
+Purpose:
+
+Transform the current-state MEPS market indicators into comparable analytical features for downstream MEPS scoring.
+
+The feature model sits between the analytical market mart and the MEPS scoring engine:
+
+```text
+mart_meps_market
+        ↓
+int_meps_features
+        ↓
+MEPS dimension scoring
+        ↓
+Final MEPS score
+```
+
+M5 does **not** calculate dimension scores or the final MEPS score. Those calculations are part of Milestone 6.
+
+### Feature Engineering Methodology
+
+The feature engineering process follows four steps:
+
+1. Preserve the original indicator values.
+2. Apply transformations where analytically justified.
+3. Normalize indicators to a 0–1 scale.
+4. Validate the resulting features before downstream scoring.
+
+### Transformation Rules
+
+#### Population
+
+Population has a substantially larger scale than the other indicators and is therefore transformed using:
+
+`log1p(population)`
+
+This reduces the influence of extreme population differences while preserving the relative ordering of the four MEPS markets.
+
+The transformed population is then Min-Max normalized.
+
+#### Crypto Adoption Rank
+
+Chainalysis adoption rank has an inverse direction:
+
+* Lower rank = stronger crypto activity.
+* Higher rank = weaker crypto activity.
+
+The rank is therefore direction-reversed before normalization.
+
+The transformation is:
+
+```text
+max(rank) - rank
+```
+
+This ensures that stronger adoption receives a higher feature value.
+
+### Normalization
+
+The remaining indicators are normalized using Min-Max scaling:
+
+```text
+(x - min(x)) / (max(x) - min(x))
+```
+
+The resulting feature values range from:
+
+```text
+0 = lowest relative value among the MEPS markets
+1 = highest relative value among the MEPS markets
+```
+
+The normalization is comparative across the four current MEPS markets. A feature value of `1.0` therefore means that the market has the highest relative value within this comparison set; it does not represent a universally optimal or absolute score.
+
+### Feature Treatment Matrix
+
+| Indicator              | Transformation    | Direction             | Normalization |
+| ---------------------- | ----------------- | --------------------- | ------------- |
+| Population             | `log1p`           | Higher = stronger     | Min-Max       |
+| GDP per capita         | None              | Higher = stronger     | Min-Max       |
+| Remittances (% GDP)    | None              | Higher = stronger     | Min-Max       |
+| Internet penetration   | None              | Higher = stronger     | Min-Max       |
+| Smartphone adoption    | None              | Higher = stronger     | Min-Max       |
+| Account ownership      | None              | Higher = stronger     | Min-Max       |
+| Digital payment usage  | None              | Higher = stronger     | Min-Max       |
+| Crypto search interest | None              | Higher = stronger     | Min-Max       |
+| Crypto adoption rank   | Reverse direction | Lower rank = stronger | Min-Max       |
+
+### Feature Model Output
+
+The feature model retains the original indicators alongside transformation and normalized feature columns.
+
+Transformation columns:
+
+* `population_transformed`
+* `crypto_adoption_rank_transformed`
+
+Normalized feature columns:
+
+* `population_feature`
+* `gdp_per_capita_feature`
+* `remittances_pct_gdp_feature`
+* `internet_penetration_feature`
+* `smartphone_adoption_feature`
+* `account_ownership_feature`
+* `digital_payment_usage_feature`
+* `crypto_search_interest_feature`
+* `crypto_adoption_rank_feature`
+
+### M5 Validation
+
+The feature-engineering model is validated using three dbt tests:
+
+* Feature range validation — confirms normalized features remain within `[0, 1]`.
+* Country grain validation — confirms one feature record per MEPS market.
+* Not-null validation — confirms all normalized features are populated.
+
+Current validation result:
+
+* **3 data tests**
+* **3 passed**
+* **0 errors**
+* **0 warnings**
+
+### Methodological Boundary
+
+M5 produces normalized analytical features only.
+
+It does not:
+
+* calculate dimension scores;
+* apply MEPS dimension weights;
+* calculate the final MEPS score;
+* rank the markets.
+
+Those decisions belong to Milestone 6.
+
+
+
 Feature Engineering will prepare the data for the MEPS scoring engine while keeping scoring itself separate for Milestone 6.
 
 ---

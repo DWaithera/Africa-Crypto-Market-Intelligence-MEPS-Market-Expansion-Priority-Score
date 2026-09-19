@@ -123,6 +123,10 @@ dbt source
       ↓
 dbt staging
       ↓
+Data integration
+      ↓
+Analytical market mart
+      ↓
 Feature engineering
       ↓
 Normalization
@@ -1433,28 +1437,34 @@ The current MEPS data foundation is:
                                dbt staging
                                     │
                                     ▼
-                            Feature engineering
+                           Data integration
                                     │
                                     ▼
-                               Normalization
+                         Analytical market mart
                                     │
                                     ▼
-                              Dimension scores
+                          Feature engineering
                                     │
                                     ▼
-                               MEPS scoring
+                              Normalization
                                     │
                                     ▼
-                             Country ranking
+                             Dimension scores
                                     │
                                     ▼
-                            Trajectory analysis
+                              MEPS scoring
                                     │
                                     ▼
-                            Market intelligence
+                            Country ranking
                                     │
                                     ▼
-                             Growth activation
+                           Trajectory analysis
+                                    │
+                                    ▼
+                           Market intelligence
+                                    │
+                                    ▼
+                            Growth activation
                                     │
                                     ▼
                                 Dashboard
@@ -1486,93 +1496,378 @@ stg_chainalysis
 
 ---
 
-## 9.3 Current Data Flow
+## 9.3 Integrated Analytical Models
 
-### World Bank Core Data
+### Integrated Indicator Model
 
 ```text
-World Bank
-    ↓
-Python ingestion
-    ↓
-Validated raw CSV
-    ↓
-DuckDB
-    ↓
-dbt source
-    ↓
-stg_world_bank
+dbt/models/intermediate/int_meps_indicators.sql
 ```
 
-### Global Findex
+Resulting relation:
 
 ```text
-Global Findex 2025
-    ↓
-Python extraction
-    ↓
-Validated MEPS CSV
-    ↓
-DuckDB
-    ↓
-dbt source
-    ↓
-stg_global_findex
+main.int_meps_indicators
 ```
 
-### World Bank Remittances
+Purpose:
+
+Standardize the five staging datasets into one long-form analytical indicator layer.
+
+Analytical grain:
 
 ```text
-World Bank Remittances
-    ↓
-Python ingestion
-    ↓
-Validated raw CSV
-    ↓
-DuckDB
-    ↓
-dbt source
-    ↓
-stg_world_bank_remittances
+country_code + indicator + reference_year
 ```
 
-### Google Trends
+The model preserves historical observations and source reference years.
+
+Current size:
 
 ```text
-Google Trends
-    ↓
-Python ingestion
-    ↓
-Validated raw CSV
-    ↓
-DuckDB
-    ↓
-dbt source
-    ↓
-stg_google_trends
+236 observations
+9 indicators
+4 countries
 ```
 
-### Chainalysis
+The model does not normalize, score, weight, or rank indicators.
+
+---
+
+### Analytical Market Mart
 
 ```text
-Chainalysis
-    ↓
-Python validation
-    ↓
-Validated raw CSV
-    ↓
-DuckDB
-    ↓
-dbt source
-    ↓
-stg_chainalysis
+dbt/models/marts/mart_meps_market.sql
+```
+
+Resulting relation:
+
+```text
+main.mart_meps_market
+```
+
+Purpose:
+
+Provide a wide, feature-ready representation of the four MEPS markets.
+
+Grain:
+
+```text
+country_code
+```
+
+The mart contains one row per MEPS market and selects the latest available valid observation for each indicator.
+
+Each indicator retains its corresponding source reference year in a dedicated `*_year` field.
+
+The mart does not perform MEPS scoring or normalization.
+
+---
+
+## 9.4 Reference-Year Strategy
+
+MEPS uses the **latest available valid observation** for the current-state analytical market mart.
+
+Source reference years are preserved rather than overwritten.
+
+Where the latest observation is missing, the model selects the most recent valid observation rather than silently imputing a value.
+
+For example:
+
+```text
+Internet penetration
+2025 → missing
+2024 → valid
+       ↓
+mart uses 2024
+```
+
+and:
+
+```text
+Kenya remittances
+2025 → missing
+2024 → valid
+       ↓
+mart uses 2024
+```
+
+Missing-value treatment for downstream scoring is handled explicitly during feature engineering rather than through silent imputation.
+
+---
+
+## 9.5 M4 Data Engineering Validation
+
+The complete M4 dbt build passed:
+
+```text
+7 models
+23 data tests
+30 total build operations
+0 warnings
+0 errors
 ```
 
 ---
 
-# 10. Reproducibility
+# 10. Feature Engineering Layer
 
-## 10.1 World Bank Core Data
+## 10.1 Feature Model
+
+The feature-engineering model is:
+
+```text
+dbt/models/intermediate/int_meps_features.sql
+```
+
+Resulting relation:
+
+```text
+main.int_meps_features
+```
+
+Purpose:
+
+Transform the current-state MEPS market indicators into comparable analytical features for downstream MEPS scoring.
+
+The model contains one record per MEPS market.
+
+Analytical grain:
+
+```text
+country_code
+```
+
+The feature model preserves the original indicator values while adding explicit transformation and normalized feature fields.
+
+---
+
+## 10.2 Feature Engineering Process
+
+The M5 process is:
+
+```text
+mart_meps_market
+        ↓
+original indicators
+        ↓
+methodologically justified transformations
+        ↓
+direction handling
+        ↓
+Min-Max normalization
+        ↓
+0–1 analytical features
+        ↓
+MEPS scoring engine
+```
+
+M5 does not calculate dimension scores or the final MEPS score.
+
+Those calculations belong to Milestone 6.
+
+---
+
+## 10.3 Transformation Rules
+
+### Population
+
+Population has a substantially larger scale than the other MEPS indicators.
+
+The model therefore applies:
+
+```text
+log1p(population)
+```
+
+This reduces the influence of extreme population differences while preserving the relative ordering of the four MEPS markets.
+
+The transformed value is stored as:
+
+```text
+population_transformed
+```
+
+It is then Min-Max normalized into:
+
+```text
+population_feature
+```
+
+### Crypto Adoption Rank
+
+Chainalysis adoption rank has an inverse direction:
+
+```text
+Lower rank = stronger crypto activity
+Higher rank = weaker crypto activity
+```
+
+The rank is therefore direction-reversed before normalization:
+
+```text
+max(rank) - rank
+```
+
+The transformed value is stored as:
+
+```text
+crypto_adoption_rank_transformed
+```
+
+The resulting normalized feature is:
+
+```text
+crypto_adoption_rank_feature
+```
+
+This ensures that stronger crypto adoption receives a higher feature value.
+
+---
+
+## 10.4 Normalization
+
+The remaining indicators are normalized using Min-Max scaling:
+
+```text
+normalized_value =
+    (value - minimum_value)
+    /
+    (maximum_value - minimum_value)
+```
+
+The resulting features range from:
+
+```text
+0 = lowest relative value among the MEPS markets
+1 = highest relative value among the MEPS markets
+```
+
+The normalization is comparative across the four current MEPS markets.
+
+Therefore, a value of `1.0` means that the market has the highest relative value within the current comparison set. It does not represent an absolute or universal score.
+
+---
+
+## 10.5 Feature Treatment Matrix
+
+| Indicator              | Transformation    | Direction             | Normalization |
+| ---------------------- | ----------------- | --------------------- | ------------- |
+| Population             | `log1p`           | Higher = stronger     | Min-Max       |
+| GDP per capita         | None              | Higher = stronger     | Min-Max       |
+| Remittances (% GDP)    | None              | Higher = stronger     | Min-Max       |
+| Internet penetration   | None              | Higher = stronger     | Min-Max       |
+| Smartphone adoption    | None              | Higher = stronger     | Min-Max       |
+| Account ownership      | None              | Higher = stronger     | Min-Max       |
+| Digital payment usage  | None              | Higher = stronger     | Min-Max       |
+| Crypto search interest | None              | Higher = stronger     | Min-Max       |
+| Crypto adoption rank   | Reverse direction | Lower rank = stronger | Min-Max       |
+
+---
+
+## 10.6 Feature Model Fields
+
+### Original Indicators
+
+| Field                    | Description                                         |
+| ------------------------ | --------------------------------------------------- |
+| `population`             | Population                                          |
+| `gdp_per_capita`         | GDP per capita                                      |
+| `remittances_pct_gdp`    | Personal remittances received as % of GDP           |
+| `internet_penetration`   | Internet penetration                                |
+| `smartphone_adoption`    | Smartphone adoption                                 |
+| `account_ownership`      | Account ownership                                   |
+| `digital_payment_usage`  | Digital payment usage                               |
+| `crypto_search_interest` | Relative Google Trends search interest for `crypto` |
+| `crypto_adoption_rank`   | Chainalysis global crypto adoption rank             |
+
+### Transformation Fields
+
+| Field                              | Description         |
+| ---------------------------------- | ------------------- |
+| `population_transformed`           | `log1p(population)` |
+| `crypto_adoption_rank_transformed` | `max(rank) - rank`  |
+
+### Normalized Features
+
+| Field                            | Description                                    |
+| -------------------------------- | ---------------------------------------------- |
+| `population_feature`             | Normalized population feature                  |
+| `gdp_per_capita_feature`         | Normalized GDP per capita feature              |
+| `remittances_pct_gdp_feature`    | Normalized remittances feature                 |
+| `internet_penetration_feature`   | Normalized internet penetration feature        |
+| `smartphone_adoption_feature`    | Normalized smartphone adoption feature         |
+| `account_ownership_feature`      | Normalized account ownership feature           |
+| `digital_payment_usage_feature`  | Normalized digital payment usage feature       |
+| `crypto_search_interest_feature` | Normalized crypto search-interest feature      |
+| `crypto_adoption_rank_feature`   | Normalized direction-adjusted Chainalysis rank |
+
+---
+
+## 10.7 Feature Validation
+
+The feature model is validated using three dbt tests:
+
+```text
+dbt/tests/test_int_meps_features.sql
+dbt/tests/test_int_meps_features_country_grain.sql
+dbt/tests/test_int_meps_features_not_null.sql
+```
+
+The tests validate:
+
+* normalized features remain within `[0, 1]`;
+* one feature record exists per MEPS market;
+* normalized features are populated.
+
+Current result:
+
+```text
+PASS = 3
+WARN = 0
+ERROR = 0
+```
+
+---
+
+## 10.8 Feature Validation Example
+
+The current engineered features produce the expected relative treatment:
+
+| Market       | Population Feature | Crypto Activity Feature |
+| ------------ | -----------------: | ----------------------: |
+| Ghana        |             0.0000 |                  0.0000 |
+| Kenya        |             0.2588 |                  0.4091 |
+| Nigeria      |             1.0000 |                  1.0000 |
+| South Africa |             0.3206 |                  0.3636 |
+
+These values demonstrate:
+
+* population was transformed using `log1p` before normalization;
+* Nigeria has the highest population feature;
+* Ghana has the lowest population feature;
+* Chainalysis rank direction was correctly reversed;
+* Nigeria's rank of 2 produces the highest Crypto Activity feature;
+* Ghana's rank of 46 produces the lowest Crypto Activity feature.
+
+---
+
+## 10.9 Scoring Boundary
+
+The feature model does not calculate:
+
+* dimension scores;
+* dimension weights;
+* final MEPS score;
+* market rankings.
+
+Those calculations belong to the MEPS Scoring Engine in Milestone 6.
+
+---
+
+# 11. Reproducibility
+
+## 11.1 World Bank Core Data
 
 Python ingestion:
 
@@ -1594,7 +1889,7 @@ data/raw/world_bank/world_bank_indicators.csv
 
 ---
 
-## 10.2 Global Findex
+## 11.2 Global Findex
 
 Python ingestion:
 
@@ -1622,7 +1917,7 @@ data/raw/global_findex/global_findex_meps.csv
 
 ---
 
-## 10.3 World Bank Remittances
+## 11.3 World Bank Remittances
 
 Python ingestion:
 
@@ -1663,7 +1958,7 @@ dbt/tests/test_stg_world_bank_remittances_value_range.sql
 
 ---
 
-## 10.4 Google Trends
+## 11.4 Google Trends
 
 Python ingestion:
 
@@ -1706,7 +2001,7 @@ The Google Trends pipeline uses a single worldwide request with country-level ex
 
 ---
 
-## 10.5 Chainalysis
+## 11.5 Chainalysis
 
 Python validation:
 
@@ -1747,7 +2042,41 @@ dbt/tests/test_stg_chainalysis_rank_positive.sql
 
 ---
 
-# 11. Data Quality Principles
+## 11.6 Data Engineering Models
+
+Integrated indicator model:
+
+```text
+dbt/models/intermediate/int_meps_indicators.sql
+```
+
+Analytical market mart:
+
+```text
+dbt/models/marts/mart_meps_market.sql
+```
+
+---
+
+## 11.7 Feature Engineering
+
+Feature model:
+
+```text
+dbt/models/intermediate/int_meps_features.sql
+```
+
+Feature tests:
+
+```text
+dbt/tests/test_int_meps_features.sql
+dbt/tests/test_int_meps_features_country_grain.sql
+dbt/tests/test_int_meps_features_not_null.sql
+```
+
+---
+
+# 12. Data Quality Principles
 
 MEPS follows these principles:
 
@@ -1771,113 +2100,114 @@ MEPS follows these principles:
 18. Indicators should not be added solely because data is available.
 19. Source rank values should not be converted into artificial scores during ingestion.
 20. Direction handling and normalization should occur in the feature-engineering layer.
+21. Feature transformations must be explicitly documented.
+22. Normalized features must be validated before scoring.
+23. Dimension weighting must be separated from feature normalization.
+24. The final MEPS score must remain traceable to its underlying indicators.
 
 ---
 
-# 12. Current Data Foundation Status
+# 13. Current Project Status
 
-| Dataset                     | Status    |
-| --------------------------- | --------- |
-| World Bank core indicators  | 🔒 Locked |
-| Global Findex 2025          | 🔒 Locked |
-| World Bank remittances      | 🔒 Locked |
-| Google Trends crypto demand | 🔒 Locked |
-| Chainalysis crypto activity | 🔒 Locked |
+| Milestone | Description                  | Status         |
+| --------- | ---------------------------- | -------------- |
+| 0         | Project Foundation           | 🔒 Locked      |
+| 1         | Data Foundation — World Bank | 🔒 Locked      |
+| 2         | MEPS Indicator Framework     | 🔒 Locked      |
+| 3         | Data Expansion               | 🔒 Locked      |
+| 4         | Data Engineering             | 🔒 Locked      |
+| 5         | Feature Engineering          | 🟡 In Progress |
+| 6         | MEPS Scoring Engine          | 🔴 Pending     |
+| 7         | Market Intelligence          | 🔴 Pending     |
+| 8         | Growth Activation            | 🔴 Pending     |
+| 9         | Dashboard                    | 🔴 Pending     |
+| 10        | Validation & QA              | 🔴 Pending     |
+| 11        | GitHub / Portfolio           | 🟡 Foundation  |
+| 12        | Final Portfolio Story        | 🔴 Pending     |
 
 ---
 
-## 12.1 Validated Data Foundation
+## 13.1 M4 Data Engineering Status
+
+Milestone 4 established:
 
 ```text
-World Bank
-    ├── Population
-    ├── GDP per capita
-    ├── Internet penetration
-    └── Personal remittances received (% of GDP)
-
-Global Findex 2025
-    ├── Account ownership
-    ├── Digital payment usage
-    └── Smartphone adoption
-
-Google Trends
-    └── Crypto search interest
-
-Chainalysis
-    └── Crypto adoption rank
+5 staging models
+        ↓
+int_meps_indicators
+        ↓
+mart_meps_market
 ```
 
----
-
-## 12.2 Current Validation Status
+Validation:
 
 ```text
-World Bank core
-    ✓ Data contract
-    ✓ Raw CSV
-    ✓ DuckDB
-    ✓ dbt source
-    ✓ dbt staging
-    ✓ dbt tests
-
-Global Findex
-    ✓ Data contract
-    ✓ Raw workbook preserved
-    ✓ MEPS extraction
-    ✓ DuckDB
-    ✓ dbt source
-    ✓ dbt staging
-    ✓ dbt tests
-
-World Bank remittances
-    ✓ Data contract
-    ✓ Raw CSV
-    ✓ DuckDB
-    ✓ dbt source
-    ✓ dbt staging
-    ✓ dbt tests
-
-Google Trends
-    ✓ Methodology validation
-    ✓ Common worldwide request
-    ✓ Raw CSV
-    ✓ DuckDB
-    ✓ dbt source
-    ✓ dbt staging
-    ✓ dbt tests
-
-Chainalysis
-    ✓ Source extract
-    ✓ Data contract validation
-    ✓ Independent raw CSV QA
-    ✓ DuckDB
-    ✓ dbt source
-    ✓ dbt staging
-    ✓ dbt tests
-
-End-to-end dbt
-    ✓ 5 staging models
-    ✓ 19 data tests
-    ✓ 24 total operations
-    ✓ 0 warnings
-    ✓ 0 errors
+7 models
+23 data tests
+30 total dbt operations
+0 warnings
+0 errors
 ```
+
+Milestone 4 is locked in Git.
 
 ---
 
-# 13. Limitations
+## 13.2 M5 Feature Engineering Status
 
-The current data foundation has several limitations.
+Milestone 5 currently includes:
 
-## 13.1 Temporal Coverage
+```text
+mart_meps_market
+        ↓
+int_meps_features
+        ↓
+9 normalized features
+```
+
+Feature methodology:
+
+```text
+Population
+→ log1p
+→ Min-Max
+
+Positive-direction indicators
+→ Min-Max
+
+Crypto adoption rank
+→ reverse direction
+→ Min-Max
+```
+
+Validation:
+
+```text
+3 feature tests
+3 passed
+0 warnings
+0 errors
+```
+
+M5 documentation and Git lock remain to be completed.
+
+---
+
+# 14. Limitations
+
+The current data foundation and feature-engineering layer have several limitations.
+
+## 14.1 Temporal Coverage
 
 The World Bank datasets provide annual historical observations, while the Global Findex core extract currently uses 2024 data, Google Trends uses 2025 data, and Chainalysis uses the 2024 Global Crypto Adoption Index.
 
-The different observation periods should be considered when combining indicators in the scoring layer.
+The different observation periods should be considered when interpreting the combined MEPS feature set.
+
+The source reference years are preserved in the analytical market mart.
 
 ---
 
-## 13.2 Missing Values
+## 14.2 Missing Values
 
 Some source datasets contain missing observations.
 
@@ -1894,11 +2224,13 @@ World Bank remittances:
 KEN — 2025
 ```
 
-These values remain missing until an explicit analytical treatment is defined.
+The analytical market mart uses the latest available valid observation where the latest observation is missing.
+
+No silent imputation is performed.
 
 ---
 
-## 13.3 Indicator Interpretation
+## 14.3 Indicator Interpretation
 
 Individual indicators do not independently predict crypto-market success.
 
@@ -1908,7 +2240,7 @@ MEPS therefore combines multiple dimensions rather than relying on a single indi
 
 ---
 
-## 13.4 Source Comparability
+## 14.4 Source Comparability
 
 Different datasets may have different:
 
@@ -1922,7 +2254,41 @@ These differences must be considered during feature engineering and scoring.
 
 ---
 
-## 13.5 Google Trends Limitations
+## 14.5 Relative Feature Interpretation
+
+The current normalized features are calculated across the four MEPS markets.
+
+Therefore:
+
+```text
+0
+```
+
+means the lowest relative value among the four markets, while:
+
+```text
+1
+```
+
+means the highest relative value among the four markets.
+
+The values should not be interpreted as universal measures of market quality or attractiveness.
+
+Adding new countries would change the normalization reference set and could therefore change the feature values.
+
+---
+
+## 14.6 Population Transformation
+
+Population is transformed using `log1p` because its absolute scale is substantially larger than the other MEPS indicators.
+
+The transformation reduces scale dominance but does not eliminate the influence of population size.
+
+The choice should be revisited during later sensitivity analysis.
+
+---
+
+## 14.7 Google Trends Limitations
 
 Google Trends is a relative search-interest dataset.
 
@@ -1939,24 +2305,24 @@ The current MEPS methodology uses one worldwide request to maintain a common nor
 
 ---
 
-## 13.6 Chainalysis Limitations
+## 14.8 Chainalysis Limitations
 
 The current Chainalysis extract uses **global country rank** rather than a directly observed country-level adoption score.
 
 Therefore:
 
-* rank differences are ordinal rather than cardinal
-* a rank difference does not represent a proportional difference in adoption
-* the raw rank should not be interpreted as transaction volume
-* the raw rank should not be interpreted as user count
-* the raw rank should not be interpreted as revenue
-* the raw rank should not be interpreted as future growth
+* rank differences are ordinal rather than cardinal;
+* a rank difference does not represent a proportional difference in adoption;
+* the raw rank should not be interpreted as transaction volume;
+* the raw rank should not be interpreted as user count;
+* the raw rank should not be interpreted as revenue;
+* the raw rank should not be interpreted as future growth.
 
-Rank direction and normalization are deferred to feature engineering.
+The rank is direction-adjusted and normalized only in the feature-engineering layer.
 
 ---
 
-## 13.7 Indicator Correlation
+## 14.9 Indicator Correlation
 
 Some indicators may measure related underlying concepts.
 
@@ -1978,7 +2344,7 @@ The scoring model should avoid allowing highly correlated indicators to unintent
 
 ---
 
-## 13.8 MEPS Is a Prioritization Framework
+## 14.10 MEPS Is a Prioritization Framework
 
 MEPS is designed to prioritize markets under limited expansion resources.
 
@@ -1991,59 +2357,58 @@ It is not intended to guarantee:
 * regulatory approval
 * market-entry success
 
-The final score should therefore be interpreted as a **relative prioritization signal**, not a prediction of future performance.
+The final score should therefore be interpreted as a **relative prioritization signal**, not a prediction of future performance or guaranteed market success.
 
 ---
 
-# 14. Next Data Engineering Stage
+# 15. Next Analytical Stage
 
-The validated data foundation supports the next MEPS engineering stages:
+Milestones 0–4 have established and validated the project foundation, indicator framework, expanded data foundation, and analytical data-engineering layer.
+
+Milestone 5 has established the feature-engineering methodology and validated the normalized analytical features.
+
+The next major stage is **Milestone 6 — MEPS Scoring Engine**.
+
+M6 will focus on:
+
+* grouping normalized features into the five approved MEPS dimensions;
+* defining dimension-level aggregation;
+* applying the approved dimension weights;
+* calculating the composite MEPS score;
+* producing the comparative market ranking;
+* documenting the scoring methodology;
+* testing the scoring engine;
+* performing sensitivity analysis before treating the ranking as decision-ready.
+
+The final score should remain a **relative market-prioritization signal**, not a prediction of future performance or guaranteed market success.
+
+The analytical chain is:
 
 ```text
-Validated raw data
+Validated data
         ↓
-dbt staging
-        ↓
-Data integration
+Data engineering
         ↓
 Feature engineering
         ↓
-Normalization
+Normalized features
         ↓
 Dimension scores
         ↓
-MEPS weighting
+Weighted MEPS
         ↓
-Sensitivity analysis
-        ↓
-Country ranking
+Market ranking
         ↓
 Trajectory analysis
         ↓
 Market intelligence
         ↓
 Growth activation
-        ↓
-Dashboard
 ```
-
-The next major stage is **Milestone 4 — Data Engineering**.
-
-Milestone 4 will focus on:
-
-* integrating the approved staging models
-* creating reusable intermediate transformations
-* creating analytical/mart models
-* establishing production-style transformation logic
-* strengthening pipeline reproducibility
-* preparing the unified analytical dataset for feature engineering
-* documenting the transformation architecture
-
-The MEPS scoring layer will not be implemented until the integrated analytical dataset has passed the required engineering and validation checks.
 
 ---
 
-# 15. MEPS Analytical Principle
+# 16. MEPS Analytical Principle
 
 MEPS should answer a business decision, not simply produce a ranking.
 
